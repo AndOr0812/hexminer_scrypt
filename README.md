@@ -1,7 +1,7 @@
 CGgminer v4.6.1 - HexMiner
 ==============
 
-CGMiner v4.6.1 with Hexminer ASIC support.
+CGMiner v4.6.1 with Hexminer ASIC-SCRYPT support.
 
 This file describes cgminer specific settings and options.
 
@@ -16,7 +16,7 @@ Extranonce patch from nicehash were included too.
 ![](https://github.com/wareck/cgminer-hexminer/blob/master/patches_and_diy/images/hexminer.jpg)
 
 
-How to build Scrypt version:
+How to build scrypt version:
 
 	sudo apt-get update
 	sudo apt-get install build-essential autoconf automake libtool pkg-config libcurl4-openssl-dev libudev-dev \
@@ -46,7 +46,7 @@ For list them:
 
 Use this following example for base :
 	
-	./cgminer --scrypt -o stratum+tcp://us-east.batltc.com:3333 -u myname.worker -p x --hexminers-set-diff-to-one 0 \
+	./cgminer -o stratum+tcp://us-east.batltc.com:3333 -u myname.worker -p x --hexminers-set-diff-to-one 0 \
 	--hexminers-chip-mask 255 --hexminers-voltage 1000 --hexminer8-options 8:240
 
 ![](https://github.com/wareck/cgminer-hexminer/blob/master/patches_and_diy/images/hexminer2.jpg)
