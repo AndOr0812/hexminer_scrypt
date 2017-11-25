@@ -1,0 +1,170 @@
+--- api.c	2014-09-22 14:22:33.004835734 +0300
++++ api.c	2014-09-22 14:25:50.195914344 +0300
+@@ -25,8 +25,8 @@
+ #include "miner.h"
+ #include "util.h"
+ #include "klist.h"
+-
+-#if defined(USE_BFLSC) || defined(USE_AVALON) || defined(USE_AVALON2) || \
++#if defined(USE_HEXMINERS) || \
++	defined(USE_BFLSC) || defined(USE_AVALON) || defined(USE_AVALON2) || \
+ 	defined(USE_HASHFAST) || defined(USE_BITFURY) || defined(USE_KLONDIKE) || \
+ 	defined(USE_KNC) || defined(USE_BAB) || defined(USE_DRILLBIT) || \
+ 	defined(USE_MINION) || defined(USE_COINTERRA) || defined(USE_BITMINE_A1) || \
+@@ -40,7 +40,7 @@
+ #endif
+ 
+ // BUFSIZ varies on Windows and Linux
+-#define TMPBUFSIZ	8192
++#define TMPBUFSIZ	8192 * 8
+ 
+ // Number of requests to queue - normally would be small
+ // However lots of PGA's may mean more
+@@ -188,6 +188,9 @@
+ #ifdef USE_BITMINE_A1
+ 			"BA1 "
+ #endif
++#ifdef USE_HEXMINERS
++			"HEXS "
++#endif
+ #ifdef USE_ICARUS
+ 			"ICA "
+ #endif
+@@ -1523,12 +1526,14 @@
+ 
+ #if LOCK_TRACKING
+ 
++FILE * pFile;
++
+ #define LOCK_FMT_FFL " - called from %s %s():%d"
+ 
+-#define LOCKMSG(fmt, ...)	fprintf(stderr, "APILOCK: " fmt "\n", ##__VA_ARGS__)
+-#define LOCKMSGMORE(fmt, ...)	fprintf(stderr, "          " fmt "\n", ##__VA_ARGS__)
+-#define LOCKMSGFFL(fmt, ...) fprintf(stderr, "APILOCK: " fmt LOCK_FMT_FFL "\n", ##__VA_ARGS__, file, func, linenum)
+-#define LOCKMSGFLUSH() fflush(stderr)
++#define LOCKMSG(fmt, ...)	fprintf(pFile, "APILOCK: " fmt "\n", ##__VA_ARGS__)
++#define LOCKMSGMORE(fmt, ...)	fprintf(pFile, "          " fmt "\n", ##__VA_ARGS__)
++#define LOCKMSGFFL(fmt, ...) fprintf(pFile, "APILOCK: " fmt LOCK_FMT_FFL "\n", ##__VA_ARGS__, file, func, linenum)
++#define LOCKMSGFLUSH() fflush(pFile)
+ 
+ typedef struct lockstat {
+ 	uint64_t lock_id;
+@@ -1886,6 +1891,7 @@
+ 
+ void show_locks()
+ {
++	pFile = fopen ("/tmp/cglocks","w");
+ 	LOCKLIST *list;
+ 
+ 	locklock();
+@@ -1905,6 +1911,8 @@
+ 	LOCKMSGFLUSH();
+ 
+ 	lockunlock();
++	fclose (pFile);
++
+ }
+ #endif
+ 
+@@ -2687,6 +2695,8 @@
+ 	}
+ 
+ 	pool = pools[id];
++	if (pool->enabled == POOL_DISABLED)
++		enabled_pools++;
+ 	pool->enabled = POOL_ENABLED;
+ 	cg_runlock(&control_lock);
+ 	switch_pools(pool);
+@@ -2804,7 +2814,7 @@
+ 		message(io_data, MSG_ALRENAP, id, NULL, isjson);
+ 		return;
+ 	}
+-
++  enabled_pools++;
+ 	pool->enabled = POOL_ENABLED;
+ 	if (pool->prio < current_pool()->prio)
+ 		switch_pools(pool);
+@@ -2953,7 +2963,8 @@
+ 		message(io_data, MSG_DISLASTP, id, NULL, isjson);
+ 		return;
+ 	}
+-
++	enabled_pools--;
++  if (pool->enabled == POOL_ENABLED) enabled_pools--;
+ 	pool->enabled = POOL_DISABLED;
+ 	if (pool == current_pool())
+ 		switch_pools(NULL);
+@@ -3197,14 +3208,38 @@
+ {
+ 	struct api_data *root = NULL;
+ 
++  #if defined(USE_HEXMINERS)
++	char *enabled;
++	char *status;
++  char *is_hex = NULL;
++  
++  is_hex = strstr(id, "HEX");
++  #endif
+ 	root = api_add_int(root, "STATS", &i, false);
+ 	root = api_add_string(root, "ID", id, false);
++	#if defined(USE_HEXMINERS)
++	if(is_hex && cgpu) {
++		if (cgpu->deven != DEV_DISABLED)
++				enabled = (char *)YES;
++			else
++				enabled = (char *)NO;
++		
++		  status = (char *)status2str(cgpu->status);
++			root = api_add_string(root, "Enabled", enabled, false);
++			root = api_add_string(root, "Status", status, false);
++	}
++	#endif
+ 	root = api_add_elapsed(root, "Elapsed", &(total_secs), false);
++	#if defined(USE_HEXMINERS)
++	if(is_hex == NULL) {
++	#endif
+ 	root = api_add_uint32(root, "Calls", &(stats->getwork_calls), false);
+ 	root = api_add_timeval(root, "Wait", &(stats->getwork_wait), false);
+ 	root = api_add_timeval(root, "Max", &(stats->getwork_wait_max), false);
+ 	root = api_add_timeval(root, "Min", &(stats->getwork_wait_min), false);
+-
++  #if defined(USE_HEXMINERS)
++	} 
++	#endif
+ 	if (pool_stats) {
+ 		root = api_add_uint32(root, "Pool Calls", &(pool_stats->getwork_calls), false);
+ 		root = api_add_uint32(root, "Pool Attempts", &(pool_stats->getwork_attempts), false);
+@@ -3234,6 +3269,10 @@
+ 
+ 	if (cgpu) {
+ #ifdef USE_USBUTILS
++	#if defined(USE_HEXMINERS)
++	if(is_hex == NULL) {
++	#endif
++	
+ 		char details[256];
+ 
+ 		if (cgpu->usbinfo.pipe_count)
+@@ -3287,6 +3326,10 @@
+ 		}
+ 
+ 		root = api_add_string(root, "USB tmo", details, true);
++ #if defined(USE_HEXMINERS)
++	}
++ #endif
++	
+ #endif
+ 	}
+ 
+@@ -5004,7 +5047,11 @@
+ 										break;
+ 									}
+ 								}
++	#if LOCK_TRACKING
++	if (ISPRIVGROUP(group) || strstr(COMMANDS(group), cmdbuf) || 1)
++	#else
+ 								if (ISPRIVGROUP(group) || strstr(COMMANDS(group), cmdbuf))
++	#endif
+ 									(cmds[i].func)(io_data, c, param, isjson, group);
+ 								else {
+ 									message(io_data, MSG_ACCDENY, 0, cmds[i].name, isjson);

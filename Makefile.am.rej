@@ -1,0 +1,34 @@
+--- Makefile.am	2014-09-22 14:22:33.000835508 +0300
++++ Makefile.am	2014-09-22 14:25:50.191914120 +0300
+@@ -42,6 +42,7 @@
+ 		   sha2.c sha2.h api.c
+ 
+ cgminer_SOURCES	+= logging.c
++cgminer_SOURCES += scrypt.c scrypt.h
+ 
+ cgminer_SOURCES	+= klist.h klist.c
+ 
+@@ -55,9 +56,9 @@
+ cgminer_SOURCES += usbutils.c usbutils.h
+ endif
+ 
+-if WANT_LIBBITFURY
+-cgminer_SOURCES += libbitfury.c libbitfury.h mcp2210.c mcp2210.h
+-endif
++#if WANT_LIBBITFURY
++#cgminer_SOURCES += libbitfury.c libbitfury.h mcp2210.c mcp2210.h
++#endif
+ 
+ if WANT_CRC16
+ cgminer_SOURCES += crc16.c crc.h
+@@ -150,6 +151,10 @@
+ cgminer_SOURCES += driver-bitmain.c driver-bitmain.h
+ endif
+ 
++if HAS_HEXMINERS
++cgminer_SOURCES += driver-hexminers.c driver-hexminers.h
++endif
++
+ if HAS_MODMINER
+ cgminer_SOURCES += driver-modminer.c
+ bitstreamsdir = $(bindir)/bitstreams

@@ -1,0 +1,1199 @@
+--- cgminer.c	2014-09-22 14:22:33.032837307 +0300
++++ cgminer.c	2014-09-22 14:25:50.139911198 +0300
+@@ -28,7 +28,7 @@
+ #include <assert.h>
+ #include <signal.h>
+ #include <limits.h>
+-
++//#include <scrypt.h>
+ #ifdef USE_USBUTILS
+ #include <semaphore.h>
+ #endif
+@@ -93,6 +93,12 @@
+ #include "driver-cointerra.h"
+ #endif
+ 
++
++#ifdef USE_HEXMINERS
++#include "driver-hexminers.h"
++#endif
++
++
+ #ifdef USE_HASHFAST
+ #include "driver-hashfast.h"
+ #endif
+@@ -100,7 +106,7 @@
+ #if defined(USE_ANT_S1) || defined(USE_ANT_S2)
+ #include "driver-bitmain.h"
+ #endif
+-
++//#include <scrypt.c>
+ #if defined(USE_BITFORCE) || defined(USE_ICARUS) || defined(USE_AVALON) || defined(USE_AVALON2) || defined(USE_MODMINER)
+ #	define USE_FPGA
+ #endif
+@@ -137,8 +143,8 @@
+ };
+ 
+ #ifdef HAVE_LIBCURL
+-static char *opt_btc_address;
+-static char *opt_btc_sig;
++static char *opt_ltc_address;
++static char *opt_ltc_sig;
+ #endif
+ static char *opt_benchfile;
+ static bool opt_benchfile_display;
+@@ -155,8 +161,8 @@
+ bool opt_compact;
+ const int opt_cutofftemp = 95;
+ int opt_log_interval = 5;
+-int opt_queue = 9999;
+-static int max_queue = 1;
++int opt_queue = 60;
++static int max_queue = 2;
+ int opt_scantime = -1;
+ int opt_expiry = 120;
+ static const bool opt_time = true;
+@@ -207,7 +213,8 @@
+ bool opt_api_network;
+ bool opt_delaynet;
+ bool opt_disable_pool;
+-static bool no_work;
++//static 
++bool no_work;
+ #ifdef USE_ICARUS
+ char *opt_icarus_options = NULL;
+ char *opt_icarus_timing = NULL;
+@@ -229,6 +236,9 @@
+ #ifdef USE_HASHRATIO
+ #include "driver-hashratio.h"
+ #endif
++#ifdef USE_HEXMINERS
++char *opt_hexminers_options = NULL;
++#endif
+ #ifdef USE_KLONDIKE
+ char *opt_klondike_options = NULL;
+ #endif
+@@ -276,7 +286,10 @@
+ int opt_usbdump = -1;
+ bool opt_usb_list_all;
+ cgsem_t usb_resource_sem;
++#if defined(USE_HEXMINERS)
++#else
+ static pthread_t usb_poll_thread;
++#endif
+ static bool usb_polling;
+ #endif
+ 
+@@ -346,7 +359,8 @@
+ double total_diff_accepted, total_diff_rejected, total_diff_stale;
+ static int staged_rollable;
+ unsigned int new_blocks;
+-static unsigned int work_block;
++//static
++unsigned int work_block;
+ unsigned int found_blocks;
+ 
+ unsigned int local_work;
+@@ -357,6 +371,11 @@
+ 
+ int total_pools, enabled_pools;
+ enum pool_strategy pool_strategy = POOL_FAILOVER;
++
++#if defined(USE_HEXMINERS)
++enum default_hex_miner default_hex_miner = D_HEXS;
++#endif
++
+ int opt_rotate_period;
+ static int total_urls, total_users, total_passes, total_userpasses;
+ 
+@@ -561,6 +580,7 @@
+ 	return cgpu;
+ }
+ 
++	
+ static void sharelog(const char*disposition, const struct work*work)
+ {
+ 	char *target, *hash, *data;
+@@ -709,9 +729,11 @@
+ {
+ 	struct pool *pool;
+ 
+-	cg_rlock(&control_lock);
++	//cg_rlock
++	cg_wlock(&control_lock);
+ 	pool = currentpool;
+-	cg_runlock(&control_lock);
++	cg_wunlock(&control_lock);
++	//cg_runlock
+ 
+ 	return pool;
+ }
+@@ -789,6 +811,15 @@
+ 		*val2 = *val1;
+ }
+ 
++
++#ifdef USE_HEXMINERS
++static char *set_default_to_s(enum default_hex_miner *which)
++{
++	*which = D_HEXS;
++	return NULL;
++}
++#endif
++
+ static char *set_balance(enum pool_strategy *strategy)
+ {
+ 	*strategy = POOL_BALANCE;
+@@ -1254,11 +1285,11 @@
+ 		     "Set BXM bits for overclocking"),
+ #endif
+ #ifdef HAVE_LIBCURL
+-	OPT_WITH_ARG("--btc-address",
+-		     opt_set_charp, NULL, &opt_btc_address,
+-		     "Set bitcoin target address when solo mining to bitcoind (mandatory)"),
+-	OPT_WITH_ARG("--btc-sig",
+-		     opt_set_charp, NULL, &opt_btc_sig,
++	OPT_WITH_ARG("--ltc-address",
++		     opt_set_charp, NULL, &opt_ltc_address,
++		     "Set litecoin target address when solo mining to litecoind (mandatory)"),
++	OPT_WITH_ARG("--ltc-sig",
++		     opt_set_charp, NULL, &opt_ltc_sig,
+ 		     "Set signature to add to coinbase when solo mining (optional)"),
+ #endif
+ #ifdef HAVE_CURSES
+@@ -1363,6 +1394,23 @@
+ 		     opt_set_charp, NULL, &opt_klondike_options,
+ 		     "Set klondike options clock:temptarget"),
+ #endif
++#ifdef USE_HEXMINERS
++OPT_WITH_ARG("--hexminers-options",
++		     opt_set_charp, NULL, &opt_hexminers_options,
++		     "Set hexminers options asic_count:freq"),
++	OPT_WITH_ARG("--hexminers-voltage",
++					opt_set_intval, NULL, &opt_hexminers_core_voltage,
++		     "Set hexminers core voltage, in millivolts"),
++	OPT_WITHOUT_ARG("--set_default_to_s",
++		     set_default_to_s, &default_hex_miner,
++		     "Handle USB detect errors as hexs"),
++	OPT_WITH_ARG("--hexminers-chip-mask",
++					opt_set_intval, NULL, &opt_hexminers_chip_mask,
++		     "Set hexminers eneable or disable chips"),	     
++	OPT_WITH_ARG("--hexminers-set-diff-to-one",
++		     opt_set_intval, NULL, &opt_hexminers_set_config_diff_to_one,
++		     "Set hexminers ASIC difficulty to one"),	     
++#endif
+ 	OPT_WITHOUT_ARG("--load-balance",
+ 		     set_loadbalance, &pool_strategy,
+ 		     "Change multipool strategy from failover to quota based balance"),
+@@ -1448,7 +1496,7 @@
+ #endif
+ 	OPT_WITH_ARG("--pass|-p",
+ 		     set_pass, NULL, &opt_set_null,
+-		     "Password for bitcoin JSON-RPC server"),
++		     "Password for litecoin JSON-RPC server"),
+ 	OPT_WITHOUT_ARG("--per-device-stats",
+ 			opt_set_bool, &want_per_device_stats,
+ 			"Force verbose mode and output per-device statistics"),
+@@ -1529,7 +1577,7 @@
+ 	),
+ 	OPT_WITH_ARG("--url|-o",
+ 		     set_url, NULL, &opt_set_null,
+-		     "URL for bitcoin JSON-RPC server"),
++		     "URL for litecoin JSON-RPC server"),
+ #ifdef USE_USBUTILS
+ 	OPT_WITH_ARG("--usb",
+ 		     opt_set_charp, NULL, &opt_usb_select,
+@@ -1543,10 +1591,10 @@
+ #endif
+ 	OPT_WITH_ARG("--user|-u",
+ 		     set_user, NULL, &opt_set_null,
+-		     "Username for bitcoin JSON-RPC server"),
++		     "Username for litecoin JSON-RPC server"),
+ 	OPT_WITH_ARG("--userpass|-O",
+ 		     set_userpass, NULL, &opt_set_null,
+-		     "Username:Password pair for bitcoin JSON-RPC server"),
++		     "Username:Password pair for litecoin JSON-RPC server"),
+ 	OPT_WITHOUT_ARG("--verbose",
+ 			opt_set_bool, &opt_log_output,
+ 			"Log verbose output to stderr as well as status output"),
+@@ -1776,6 +1824,9 @@
+ #ifdef USE_MINION
+ 		"minion "
+ #endif
++#ifdef USE_HEXMINERS
++		"hexminers "
++#endif
+ #ifdef USE_MODMINER
+ 		"modminer "
+ #endif
+@@ -1873,6 +1924,7 @@
+ 	int ret;
+ 
+ 	cg_wlock(&control_lock);
++	local_work++;
+ 	ret = total_work++;
+ 	cg_wunlock(&control_lock);
+ 
+@@ -2029,7 +2081,7 @@
+ 	}
+ 
+ 	calc_midstate(work);
+-	local_work++;
++	//local_work++;
+ 	work->pool = pool;
+ 	work->gbt = true;
+ 	work->longpoll = false;
+@@ -2355,12 +2407,12 @@
+ 	pool->nonce2_offset = 41 + ofs;
+ 	ofs += 8;
+ 
+-	if (opt_btc_sig) {
+-		len = strlen(opt_btc_sig);
++	if (opt_ltc_sig) {
++		len = strlen(opt_ltc_sig);
+ 		if (len > 32)
+ 			len = 32;
+ 		pool->scriptsig_base[ofs++] = len;
+-		memcpy(pool->scriptsig_base + ofs, opt_btc_sig, len);
++		memcpy(pool->scriptsig_base + ofs, opt_ltc_sig, len);
+ 		ofs += len;
+ 	}
+ 
+@@ -2519,7 +2571,7 @@
+ 
+ /* Convert a uint64_t value into a truncated string for displaying with its
+  * associated suitable for Mega, Giga etc. Buf array needs to be long enough */
+-static void suffix_string(uint64_t val, char *buf, size_t bufsiz, int sigdigits)
++void suffix_string(uint64_t val, char *buf, size_t bufsiz, int sigdigits)
+ {
+ 	const double  dkilo = 1000.0;
+ 	const uint64_t kilo = 1000ull;
+@@ -2720,7 +2772,8 @@
+ 
+ static void curses_print_devstatus(struct cgpu_info *cgpu, int devno, int count)
+ {
+-	static int devno_width = 1, dawidth = 1, drwidth = 1, hwwidth = 1, wuwidth = 1;
++	//static int devno_width = 1, dawidth = 1, drwidth = 1, hwwidth = 1, wuwidth = 1;
++	static int devno_width = 1, dawidth = 1, drwidth = 1, hwwidth = 1, hwwidthp = 1, prwidthp = 1, wuwidth = 1;
+ 	char logline[256], unique_id[12];
+ 	struct timeval now;
+ 	double dev_runtime, wu;
+@@ -2749,20 +2802,28 @@
+ 	wu = cgpu->diff1 / dev_runtime * 60;
+ 
+ 	wmove(statuswin,devcursor + count, 0);
++#if defined(USE_HEXMINERS)
++	double hwp = (cgpu->hw_errors + cgpu->diff1) ?
++		     (double)100 *(double)(cgpu->hw_errors) / (double)(cgpu->hw_errors + cgpu->diff1) : 0;
++		     
++ double prp = (cgpu->diff_accepted + cgpu->diff_rejected) ?
++		     (double)100 *(double)(cgpu->diff_rejected) / (double)(cgpu->diff_rejected + cgpu->diff_accepted) : 0;
++#endif
+ 	adj_width(devno, &devno_width);
+ 	if (cgpu->unique_id) {
+ 		unique_id[8] = '\0';
+ 		memcpy(unique_id, blanks, 8);
+ 		strncpy(unique_id, cgpu->unique_id, 8);
+ 	} else
+-		sprintf(unique_id, "%-8d", cgpu->device_id);
+-	cg_wprintw(statuswin, " %*d: %s %-8s: ", devno_width, devno, cgpu->drv->name,
++		sprintf(unique_id, "%-3d", cgpu->device_id);
++		unique_id[3] = '\0';
++	cg_wprintw(statuswin, " %*d: %s %-3s: ", devno_width, devno, cgpu->drv->name,
+ 		   unique_id);
+ 	logline[0] = '\0';
+ 	cgpu->drv->get_statline_before(logline, sizeof(logline), cgpu);
+ 	devstatlen = strlen(logline);
+-	if (devstatlen < STATBEFORELEN)
+-		strncat(logline, blanks, STATBEFORELEN - devstatlen);
++	if (devstatlen < STATBEFORELEN - 7)
++		strncat(logline, blanks, STATBEFORELEN - 7 - devstatlen);
+ 	cg_wprintw(statuswin, "%s | ", logline);
+ 
+ 
+@@ -2813,13 +2874,39 @@
+ 		adj_fwidth(cgpu->diff_accepted, &dawidth);
+ 		adj_fwidth(cgpu->diff_rejected, &drwidth);
+ 		adj_width(cgpu->hw_errors, &hwwidth);
+-		cg_wprintw(statuswin, "A:%*.0f R:%*.0f HW:%*d",
++#if defined(USE_HEXMINERS)
++	if(usb_ident(cgpu) == IDENT_HEXS) {
++		adj_width(prp, &prwidthp);
++		adj_width(hwp, &hwwidthp);
++	}
++#endif
++ 	
++ 		adj_width(wu, &wuwidth);
++#if defined(USE_HEXMINERS)
++	if(usb_ident(cgpu) == IDENT_HEXS) {
++		cg_wprintw(statuswin, "A:%*.0f R:%*.0f/%*.2f%% HW:%*d/%*.2f%%",
+ 				dawidth, cgpu->diff_accepted,
+ 				drwidth, cgpu->diff_rejected,
+-				hwwidth, cgpu->hw_errors);
++				prwidthp +1, prp,
++				hwwidth, cgpu->hw_errors,
++				hwwidthp + 1, hwp);
++	} else {
++		cg_wprintw(statuswin, "A:%*.0f R:%*.0f HW:%*d",
++			dawidth, cgpu->diff_accepted,
++			drwidth, cgpu->diff_rejected,
++			hwwidth, cgpu->hw_errors);
+ 	}
++#else
++ 		cg_wprintw(statuswin, "A:%*.0f R:%*.0f HW:%*d",
++ 				dawidth, cgpu->diff_accepted,
++ 				drwidth, cgpu->diff_rejected,
++ 				hwwidth, cgpu->hw_errors);
++#endif
+ 
+-	logline[0] = '\0';
++ 	}
++ 
++ 	logline[0] = '\0';
++	
+ 	cgpu->drv->get_statline(logline, sizeof(logline), cgpu);
+ 	cg_wprintw(statuswin, "%s", logline);
+ 
+@@ -3294,11 +3381,12 @@
+ 
+ 			if (work->work_difficulty < 1)
+ 				diffplaces = 6;
+-
++      //opt_scrypt
++      //opt_scrypt
+ 			snprintf(worktime, sizeof(worktime),
+ 				" <-%08lx.%08lx M:%c D:%1.*f G:%02d:%02d:%02d:%1.3f %s (%1.3f) W:%1.3f (%1.3f) S:%1.3f R:%02d:%02d:%02d",
++				(unsigned long)be32toh(*(uint32_t *)&(work->data[32])),
+ 				(unsigned long)be32toh(*(uint32_t *)&(work->data[28])),
+-				(unsigned long)be32toh(*(uint32_t *)&(work->data[24])),
+ 				work->getwork_mode, diffplaces, work->work_difficulty,
+ 				tm_getwork.tm_hour, tm_getwork.tm_min,
+ 				tm_getwork.tm_sec, getwork_time, workclone,
+@@ -3518,7 +3606,12 @@
+ static const double bits192 = 6277101735386680763835789423207666416102355444464034512896.0;
+ static const double bits128 = 340282366920938463463374607431768211456.0;
+ static const double bits64 = 18446744073709551616.0;
+-
++/*
++static const double truediffone = 26959535291011309493156476344723991336010898738574164086137773096960.0;
++static const double bits192 = 6277101735386680763835789423207666416102355444464034512896.0;
++static const double bits128 = 340282366920938463463374607431768211456.0;
++static const double bits64 = 18446744073709551616.0;
++*/
+ /* Converts a little endian 256 bit value to a double */
+ static double le256todouble(const void *target)
+ {
+@@ -3542,18 +3635,19 @@
+ 
+ static double diff_from_target(void *target)
+ {
++	
+ 	double d64, dcut64;
+-
++  //if (opt_scrypt)
++	
+ 	d64 = truediffone;
++	d64 *= (double)65536;
++
+ 	dcut64 = le256todouble(target);
+ 	if (unlikely(!dcut64))
+ 		dcut64 = 1;
+ 	return d64 / dcut64;
+ }
+ 
+-/*
+- * Calculate the work->work_difficulty based on the work->target
+- */
+ static void calc_diff(struct work *work, double known)
+ {
+ 	struct cgminer_pool_stats *pool_stats = &(work->pool->cgminer_pool_stats);
+@@ -4005,7 +4099,8 @@
+ 	mutex_unlock(&pool->pool_lock);
+ }
+ 
+-static bool stale_work(struct work *work, bool share);
++//static 
++bool stale_work(struct work *work, bool share);
+ 
+ static inline bool should_roll(struct work *work)
+ {
+@@ -4030,7 +4125,7 @@
+ 	return true;
+ }
+ 
+-/* Limit rolls to 7000 to not beyond 2 hours in the future where bitcoind will
++/* Limit rolls to 7000 to not beyond 2 hours in the future where litecoind will
+  * reject blocks as invalid. */
+ static inline bool can_roll(struct work *work)
+ {
+@@ -4059,7 +4154,7 @@
+ 	ntime = be32toh(*work_ntime);
+ 	ntime++;
+ 	*work_ntime = htobe32(ntime);
+-	local_work++;
++	//local_work++;
+ 	work->rolls++;
+ 	work->nonce = 0;
+ 	applog(LOG_DEBUG, "Successfully rolled work");
+@@ -4086,7 +4181,7 @@
+ 	applog(LOG_DEBUG, "Creating extra submit work thread");
+ 
+ 	ce = pop_curl_entry(pool);
+-	/* submit solution to bitcoin via JSON-RPC */
++	/* submit solution to litecoin via JSON-RPC */
+ 	while (!submit_upstream_work(work, ce->curl, resubmit)) {
+ 		if (opt_lowmem) {
+ 			applog(LOG_NOTICE, "Pool %d share being discarded to minimise memory cache", pool->pool_no);
+@@ -4132,6 +4227,7 @@
+ 
+ static bool clone_available(void)
+ {
++	return false;
+ 	struct work *work_clone = NULL, *work, *tmp;
+ 	bool cloned = false;
+ 
+@@ -4153,7 +4249,7 @@
+ 	mutex_unlock(stgd_lock);
+ 
+ 	if (cloned) {
+-		applog(LOG_DEBUG, "Pushing cloned available work to stage thread");
++		applog(LOG_ERR, "Pushing cloned available work to stage thread");
+ 		stage_work(work_clone);
+ 	}
+ 	return cloned;
+@@ -4164,6 +4260,7 @@
+  * the future */
+ static struct work *clone_work(struct work *work)
+ {
++	return work;
+ 	int mrs = mining_threads + opt_queue - total_staged();
+ 	struct work *work_clone;
+ 	bool cloned;
+@@ -4174,7 +4271,7 @@
+ 	cloned = false;
+ 	work_clone = make_clone(work);
+ 	while (mrs-- > 0 && can_roll(work) && should_roll(work)) {
+-		applog(LOG_DEBUG, "Pushing rolled converted work to stage thread");
++		applog(LOG_ERR, "Pushing rolled converted work to stage thread");
+ 		stage_work(work_clone);
+ 		roll_work(work);
+ 		work_clone = make_clone(work);
+@@ -4278,6 +4375,51 @@
+ 	return work;
+ }
+ 
++#if defined(USE_HEXMINERS)
++
++struct work *copy_work_noffset_fast_no_id(struct work *base_work, int noffset)
++{
++	
++  struct work *work = calloc(1, sizeof(struct work));
++
++	if (unlikely(!work))
++		quit(1, "Failed to calloc work in make_work");
++ 
++
++	memcpy(work, base_work, sizeof(struct work));
++	/* Keep the unique new id assigned during make_work to prevent copied
++	 * work from having the same id. */
++	if (base_work->job_id)
++		work->job_id = strdup(base_work->job_id);
++	if (base_work->nonce1)
++		work->nonce1 = strdup(base_work->nonce1);
++	if (base_work->ntime) {
++		/* If we are passed an noffset the binary work->data ntime and
++		 * the work->ntime hex string need to be adjusted. */
++		if (noffset) {
++			uint32_t *work_ntime = (uint32_t *)(work->data + 68);
++			uint32_t ntime = be32toh(*work_ntime);
++
++			ntime += noffset;
++			*work_ntime = htobe32(ntime);
++			work->ntime = offset_ntime(base_work->ntime, noffset);
++		} else
++			work->ntime = strdup(base_work->ntime);
++	} else if (noffset) {
++		uint32_t *work_ntime = (uint32_t *)(work->data + 68);
++		uint32_t ntime = be32toh(*work_ntime);
++
++		ntime += noffset;
++		*work_ntime = htobe32(ntime);
++	}
++	if (base_work->coinbase)
++		work->coinbase = strdup(base_work->coinbase);
++
++	return work;
++}
++
++#endif
++
+ void pool_died(struct pool *pool)
+ {
+ 	if (!pool_tset(pool, &pool->idle)) {
+@@ -4290,18 +4432,19 @@
+ 	}
+ }
+ 
+-static bool stale_work(struct work *work, bool share)
++//static 
++bool stale_work(struct work *work, bool share)
+ {
+ 	struct timeval now;
+ 	time_t work_expiry;
+ 	struct pool *pool;
+ 	int getwork_delay;
+ 
+-	if (opt_benchmark || opt_benchfile)
+-		return false;
++	//if (opt_benchmark || opt_benchfile)
++		//return false;
+ 
+ 	if (work->work_block != work_block) {
+-		applog(LOG_DEBUG, "Work stale due to block mismatch");
++		//applog(LOG_ERR, "Work stale due to block mismatch");
+ 		return true;
+ 	}
+ 
+@@ -4319,19 +4462,19 @@
+ 		bool same_job;
+ 
+ 		if (!pool->stratum_active || !pool->stratum_notify) {
+-			applog(LOG_DEBUG, "Work stale due to stratum inactive");
++			//applog(LOG_ERR, "Work stale due to stratum inactive");
+ 			return true;
+ 		}
+ 
+ 		same_job = true;
+-
+-		cg_rlock(&pool->data_lock);
++    cg_wlock(&pool->data_lock);
++	
+ 		if (strcmp(work->job_id, pool->swork.job_id))
+ 			same_job = false;
+-		cg_runlock(&pool->data_lock);
++		cg_wunlock(&pool->data_lock);
+ 
+ 		if (!same_job) {
+-			applog(LOG_DEBUG, "Work stale due to stratum job_id mismatch");
++			//applog(LOG_ERR, "Work stale due to stratum job_id mismatch");
+ 			return true;
+ 		}
+ 	}
+@@ -4345,13 +4488,13 @@
+ 
+ 	cgtime(&now);
+ 	if ((now.tv_sec - work->tv_staged.tv_sec) >= work_expiry) {
+-		applog(LOG_DEBUG, "Work stale due to expiry");
++		//applog(LOG_ERR, "Work stale due to expiry");
+ 		return true;
+ 	}
+ 
+ 	if (opt_fail_only && !share && pool != current_pool() && !work->mandatory &&
+ 	    pool_strategy != POOL_LOADBALANCE && pool_strategy != POOL_BALANCE) {
+-		applog(LOG_DEBUG, "Work stale due to fail only pool mismatch");
++		//applog(LOG_ERR, "Work stale due to fail only pool mismatch");
+ 		return true;
+ 	}
+ 
+@@ -4364,7 +4507,12 @@
+ 	double d64, s64;
+ 	uint64_t ret;
+ 
++	
++	//if (opt_scrypt)
++	
+ 	d64 = truediffone;
++	d64 *= (double)65536;
++	
+ 	s64 = le256todouble(work->hash);
+ 	if (unlikely(!s64))
+ 		s64 = 0;
+@@ -4386,7 +4534,7 @@
+ 
+ 	return ret;
+ }
+-
++/*
+ static void regen_hash(struct work *work)
+ {
+ 	uint32_t *data32 = (uint32_t *)(work->data);
+@@ -4399,6 +4547,7 @@
+ 	sha256(hash1, 32, (unsigned char *)(work->hash));
+ }
+ 
++*/
+ static bool cnx_needed(struct pool *pool);
+ 
+ /* Find the pool that currently has the highest priority */
+@@ -4621,7 +4770,10 @@
+ 	/* Cancels any cancellable usb transfers. Flagged as such it means they
+ 	 * are usualy waiting on a read result and it's safe to abort the read
+ 	 * early. */
++	#if defined(USE_HEXMINERS)
++	#else
+ 	cancel_usb_transfers();
++	#endif
+ #endif
+ 	return NULL;
+ }
+@@ -4832,19 +4984,19 @@
+ {
+ 	return worka->tv_staged.tv_sec - workb->tv_staged.tv_sec;
+ }
+-
++/*
+ static bool work_rollable(struct work *work)
+ {
+ 	return (!work->clone && work->rolltime);
+ }
+-
++*/
+ static bool hash_push(struct work *work)
+ {
+ 	bool rc = true;
+ 
+ 	mutex_lock(stgd_lock);
+-	if (work_rollable(work))
+-		staged_rollable++;
++	//if (work_rollable(work))
++		//staged_rollable++;
+ 	if (likely(!getq->frozen)) {
+ 		HASH_ADD_INT(staged_work, id, work);
+ 		HASH_SORT(staged_work, tv_sort);
+@@ -5068,6 +5220,10 @@
+ 	}
+ 
+ 	/* Special case options */
++#ifdef USE_HEXMINERS
++	if (default_hex_miner == D_HEXS)
++		 fputs(",\n\"set_default_to_s\" : true", fcfg);
++#endif
+ 	if (pool_strategy == POOL_BALANCE)
+ 		fputs(",\n\"balance\" : true", fcfg);
+ 	if (pool_strategy == POOL_LOADBALANCE)
+@@ -6466,12 +6622,12 @@
+ 	bool ret = false;
+ 	json_t *val = NULL, *res_val, *valid_val;
+ 
+-	if (!opt_btc_address) {
++	if (!opt_ltc_address) {
+ 		applog(LOG_ERR, "No BTC address specified, unable to mine solo on %s",
+ 		       pool->rpc_url);
+ 		goto out;
+ 	}
+-	snprintf(s, 256, "{\"method\": \"validateaddress\", \"params\": [\"%s\"]}\n", opt_btc_address);
++	snprintf(s, 256, "{\"method\": \"validateaddress\", \"params\": [\"%s\"]}\n", opt_ltc_address);
+ 	val = json_rpc_call(curl, pool->rpc_url, pool->rpc_userpass, s, true,
+ 			    false, &rolltime, pool, false);
+ 	if (!val)
+@@ -6483,12 +6639,12 @@
+ 	if (!valid_val)
+ 		goto out;
+ 	if (!json_is_true(valid_val)) {
+-		applog(LOG_ERR, "Bitcoin address %s is NOT valid", opt_btc_address);
++		applog(LOG_ERR, "Litecoin address %s is NOT valid", opt_ltc_address);
+ 		goto out;
+ 	}
+-	applog(LOG_NOTICE, "Solo mining to valid address: %s", opt_btc_address);
++	applog(LOG_NOTICE, "Solo mining to valid address: %s", opt_ltc_address);
+ 	ret = true;
+-	address_to_pubkeyhash(pool->script_pubkey, opt_btc_address);
++	address_to_pubkeyhash(pool->script_pubkey, opt_ltc_address);
+ 	hex2bin(scriptsig_header_bin, scriptsig_header, 41);
+ 	__setup_gbt_solo(pool);
+ 
+@@ -6568,6 +6724,7 @@
+ 		applog(LOG_DEBUG, "Probing for GBT support");
+ 		val = json_rpc_call(curl, pool->rpc_url, pool->rpc_userpass,
+ 				    gbt_req, true, false, &rolltime, pool, false);
++	
+ 		if (val) {
+ 			bool append = false, submit = false, transactions = false;
+ 			json_t *res_val, *mutables;
+@@ -6734,15 +6891,15 @@
+  * be handled. */
+ static struct work *hash_pop(bool blocking)
+ {
+-	struct work *work = NULL, *tmp;
+-	int hc;
++	struct work *work = NULL;//, *tmp;
++	//int hc;
+ 
+ 	mutex_lock(stgd_lock);
+ 	if (!HASH_COUNT(staged_work)) {
+ 		/* Increase the queue if we reach zero and we know we can reach
+ 		 * the maximum we're asking for. */
+ 		if (work_filled && max_queue < opt_queue) {
+-			max_queue++;
++			if(max_queue < most_devices * 2) max_queue++;
+ 			work_filled = false;
+ 		}
+ 		work_emptied = true;
+@@ -6773,18 +6930,18 @@
+ 		no_work = false;
+ 	}
+ 
+-	hc = HASH_COUNT(staged_work);
++	//hc = HASH_COUNT(staged_work);
+ 	/* Find clone work if possible, to allow masters to be reused */
+-	if (hc > staged_rollable) {
+-		HASH_ITER(hh, staged_work, work, tmp) {
+-			if (!work_rollable(work))
+-				break;
+-		}
+-	} else
++	//if (hc > staged_rollable) {
++		//HASH_ITER(hh, staged_work, work, tmp) {
++			//if (!work_rollable(work))
++				//break;
++		//}
++	//} else
+ 		work = staged_work;
+ 	HASH_DEL(staged_work, work);
+-	if (work_rollable(work))
+-		staged_rollable--;
++	//if (work_rollable(work))
++		//staged_rollable--;
+ 
+ 	/* Signal the getwork scheduler to look for more work */
+ 	pthread_cond_signal(&gws_cond);
+@@ -6820,7 +6977,12 @@
+ 		diff = 1.0;
+ 	}
+ 
++	
++	//if (opt_scrypt)
++	
+ 	d64 = truediffone;
++	d64 *= (double)65536;
++
+ 	d64 /= diff;
+ 
+ 	dcut64 = d64 / bits192;
+@@ -6908,7 +7070,7 @@
+ 	memcpy(pool->coinbase + pool->nonce2_offset, &nonce2le, pool->n2size);
+ 	work->nonce2 = pool->nonce2++;
+ 	work->nonce2_len = pool->n2size;
+-
++  work->job_id = strdup(pool->swork.job_id);
+ 	/* Downgrade to a read lock to read off the pool variables */
+ 	cg_dwlock(&pool->data_lock);
+ 
+@@ -6933,7 +7095,7 @@
+ 	work->sdiff = pool->sdiff;
+ 
+ 	/* Copy parameters required for share submission */
+-	work->job_id = strdup(pool->swork.job_id);
++//	work->job_id = strdup(pool->swork.job_id);
+ 	work->nonce1 = strdup(pool->nonce1);
+ 	work->ntime = strdup(pool->ntime);
+ 	cg_runlock(&pool->data_lock);
+@@ -6952,9 +7114,19 @@
+ 	}
+ 
+ 	calc_midstate(work);
++/*
++	char *mstate;
++	char *mstate1;
++	mstate = bin2hex(work->midstate, 16);
++	mstate1 = bin2hex(work->midstate+16, 16);
++	applog(LOG_ERR, "Generated stratum mstate %s", mstate);
++	applog(LOG_ERR, "Generated stratum mstate1 %s", mstate1);
++	free(mstate);
++	free(mstate1);
++*/
+ 	set_target(work->target, work->sdiff);
+ 
+-	local_work++;
++	//local_work++;
+ 	work->pool = pool;
+ 	work->stratum = true;
+ 	work->nonce = 0;
+@@ -7000,7 +7172,7 @@
+ 
+ 	get_gbt_curl(pool, 10);
+ retry:
+-	/* Bitcoind doesn't like many open RPC connections. */
++	/* litecoind doesn't like many open RPC connections. */
+ 	curl_easy_setopt(pool->gbt_curl, CURLOPT_FORBID_REUSE, 1);
+ 	val = json_rpc_call(pool->gbt_curl, pool->rpc_url, pool->rpc_userpass, pool->rpc_req,
+ 			    true, false, &rolltime, pool, false);
+@@ -7095,7 +7267,7 @@
+ 
+ 	calc_midstate(work);
+ 
+-	local_work++;
++	//local_work++;
+ 	work->gbt = true;
+ 	work->pool = pool;
+ 	work->nonce = 0;
+@@ -7138,7 +7310,7 @@
+ 	time_t diff_t;
+ 
+ 	thread_reportout(thr);
+-	applog(LOG_DEBUG, "Popping work from get queue to get work");
++	//applog(LOG_DEBUG, "Popping work from get queue to get work");
+ 	diff_t = time(NULL);
+ 	while (!work) {
+ 		work = hash_pop(true);
+@@ -7152,10 +7324,10 @@
+ 	 * the device's last valid work to not make outages appear to be
+ 	 * device failures. */
+ 	if (diff_t > 0) {
+-		applog(LOG_DEBUG, "Get work blocked for %d seconds", (int)diff_t);
++	//	applog(LOG_DEBUG, "Get work blocked for %d seconds", (int)diff_t);
+ 		cgpu->last_device_valid_work += diff_t;
+ 	}
+-	applog(LOG_DEBUG, "Got work from get queue to get work for thread %d", thr_id);
++	//applog(LOG_DEBUG, "Got work from get queue to get work for thread %d", thr_id);
+ 
+ 	work->thr_id = thr_id;
+ 	if (opt_benchmark)
+@@ -7239,43 +7411,60 @@
+ 	thr->cgpu->drv->hw_error(thr);
+ }
+ 
++extern void
++scrypt_regenhash (struct work *work);
++
++void inc_hw_errors_hexs(struct thr_info *thr, int diff)
++{
++	applog(LOG_INFO, "%s%d: invalid nonce - HW error", thr->cgpu->drv->name,
++	       thr->cgpu->device_id);
++
++	mutex_lock(&stats_lock);
++	hw_errors-=diff;
++	thr->cgpu->hw_errors-=diff;
++	mutex_unlock(&stats_lock);
++
++	thr->cgpu->drv->hw_error(thr);
++}
+ /* Fills in the work nonce and builds the output data in work->hash */
+ static void rebuild_nonce(struct work *work, uint32_t nonce)
+ {
+ 	uint32_t *work_nonce = (uint32_t *)(work->data + 64 + 12);
+-
+-	*work_nonce = htole32(nonce);
+-
+-	regen_hash(work);
++  *work_nonce = htole32(nonce);
++  		scrypt_regenhash(work);
++	
+ }
+ 
++	
+ /* For testing a nonce against diff 1 */
+ bool test_nonce(struct work *work, uint32_t nonce)
+ {
+ 	uint32_t *hash_32 = (uint32_t *)(work->hash + 28);
++	uint32_t diff1targ;
+ 
+ 	rebuild_nonce(work, nonce);
+-	return (*hash_32 == 0);
+-}
+-
+-/* For testing a nonce against an arbitrary diff */
+-bool test_nonce_diff(struct work *work, uint32_t nonce, double diff)
+-{
+-	uint64_t *hash64 = (uint64_t *)(work->hash + 24), diff64;
+-
+-	rebuild_nonce(work, nonce);
+-	diff64 = 0x00000000ffff0000ULL;
+-	diff64 /= diff;
+-
+-	return (le64toh(*hash64) <= diff64);
++	
++	diff1targ = 0x0000ffffUL;
++		
++	return (le32toh(*hash_32) <= diff1targ);
++	
+ }
++ 
+ 
+ static void update_work_stats(struct thr_info *thr, struct work *work)
+ {
+-	double test_diff = current_diff;
++	//if (opt_scrypt)
++	double test_diff;
++	test_diff = truediffone;
++	test_diff *= (double)65536;
+ 
+-	work->share_diff = share_diff(work);
++	 //* (double)65536;
+ 
++	work->share_diff = share_diff(work);
++  
++  ///??
++  //test_diff *= 65536;
++	///??
+ 	if (unlikely(work->share_diff >= test_diff)) {
+ 		work->block = true;
+ 		work->pool->solved++;
+@@ -7285,9 +7474,23 @@
+ 	}
+ 
+ 	mutex_lock(&stats_lock);
++#if defined(USE_HEXMINERS)
++if(work->ping) {
++	total_diff1 += work->device_diff;
++	thr->cgpu->diff1 += work->device_diff;
++	work->pool->diff1 += work->device_diff;
++ } else {
++ 	total_diff1 += work->work_difficulty;
++	thr->cgpu->diff1 += work->work_difficulty;
++	work->pool->diff1 += work->work_difficulty;
++ }
++#else
+ 	total_diff1 += work->device_diff;
+ 	thr->cgpu->diff1 += work->device_diff;
+ 	work->pool->diff1 += work->device_diff;
++#endif
++
++	
+ 	thr->cgpu->last_device_valid_work = time(NULL);
+ 	mutex_unlock(&stats_lock);
+ }
+@@ -7309,6 +7512,27 @@
+ 	return true;
+ }
+ 
++#if defined(USE_HEXMINERS)
++bool submit_tested_work_fast_clone(struct thr_info *thr, struct work *work, bool diff1)
++{
++	struct work *work_sub;
++	update_work_stats(thr, work);
++	
++  if(diff1) {
++		if (!fulltest(work->hash, work->target)) {
++			applog(LOG_INFO, "%s %d: Share above target",
++				thr->cgpu->drv->name, thr->cgpu->device_id);
++			return false;
++		}
++	}
++	
++  work_sub = copy_work_noffset_fast_no_id (work, 0);
++  
++	submit_work_async(work_sub);
++	return true;
++}
++#endif
++
+ /* Returns true if nonce for work was a valid share */
+ bool submit_nonce(struct thr_info *thr, struct work *work, uint32_t nonce)
+ {
+@@ -7404,9 +7628,10 @@
+ 	while (likely(!cgpu->shutdown)) {
+ 		struct work *work = get_work(mythr, thr_id);
+ 		int64_t hashes;
+-
++		
+ 		mythr->work_restart = false;
+ 		cgpu->new_work = true;
++		
+ 
+ 		cgtime(&tv_workstart);
+ 		work->nonce = 0;
+@@ -7418,6 +7643,31 @@
+ 		}
+ 		work->device_diff = MIN(drv->max_diff, work->work_difficulty);
+ 
++
++		//work->device_diff = MIN(drv->working_diff, work->work_difficulty);
++    //To be examined later	
++
++    #ifdef DEL_USE_SCRYPT
++		/* Dynamically adjust the working diff even if the target
++		 * diff is very high to ensure we can still validate scrypt is
++		 * returning shares. */
++		//if (opt_scrypt) 
++		if(0)
++		{
++			double wu;
++
++			wu = total_diff1 / total_secs * 60;
++			if (wu > 30 && drv->working_diff < drv->max_diff &&
++			    drv->working_diff < work->work_difficulty) {
++				drv->working_diff++;
++				applog(LOG_DEBUG, "Driver %s working diff changed to %.0f",
++					drv->dname, drv->working_diff);
++				work->device_diff = MIN(drv->working_diff, work->work_difficulty);
++			} else if (drv->working_diff > work->work_difficulty)
++				drv->working_diff = work->work_difficulty;
++			set_target(work->device_target, work->device_diff);
++		}
++#endif
+ 		do {
+ 			cgtime(&tv_start);
+ 
+@@ -7769,6 +8019,7 @@
+ 		free_work(work);
+ 		applog(LOG_DEBUG, "Discarded queued work item");
+ 	}
++	
+ }
+ 
+ /* This version of hash work is for devices that are fast enough to always
+@@ -7786,17 +8037,18 @@
+ 	while (likely(!cgpu->shutdown)) {
+ 		struct timeval diff;
+ 		int64_t hashes;
+-
++    
+ 		mythr->work_update = false;
+-
++  	
+ 		fill_queue(mythr, cgpu, drv, thr_id);
+ 
+ 		hashes = drv->scanwork(mythr);
+ 
+ 		/* Reset the bool here in case the driver looks for it
+ 		 * synchronously in the scanwork loop. */
++		
+ 		mythr->work_restart = false;
+-
++  	
+ 		if (unlikely(hashes == -1 )) {
+ 			applog(LOG_ERR, "%s %d failure, disabling!", drv->name, cgpu->device_id);
+ 			cgpu->deven = DEV_DISABLED;
+@@ -7818,7 +8070,7 @@
+ 		if (unlikely(mythr->pause || cgpu->deven != DEV_ENABLED))
+ 			mt_disable(mythr, thr_id, drv);
+ 
+-		if (mythr->work_update)
++ 		if (mythr->work_update)
+ 			drv->update_work(cgpu);
+ 	}
+ 	cgpu->deven = DEV_DISABLED;
+@@ -7869,7 +8121,7 @@
+ 		if (unlikely(mythr->pause || cgpu->deven != DEV_ENABLED))
+ 			mt_disable(mythr, thr_id, drv);
+ 
+-		if (mythr->work_update)
++    if (mythr->work_update)
+ 			drv->update_work(cgpu);
+ 	}
+ 	cgpu->deven = DEV_DISABLED;
+@@ -8600,9 +8852,12 @@
+ static void clean_up(bool restarting)
+ {
+ #ifdef USE_USBUTILS
+-	usb_polling = false;
+-	pthread_join(usb_poll_thread, NULL);
+-        libusb_exit(NULL);
++ usb_polling = false;
++#if defined(USE_HEXMINERS)
++#else
++ pthread_join(usb_poll_thread, NULL);      
++#endif
++ libusb_exit(NULL);
+ #endif
+ 
+ 	cgtime(&total_tv_end);
+@@ -9266,6 +9521,13 @@
+ #define DRIVER_DRV_DETECT_ALL(X) X##_drv.drv_detect(false);
+ 
+ #ifdef USE_USBUTILS
++//UGLY but if hotplug is ok we are disabling it. Something is happening here and we do not need it.
++//This breaks badly cgminer code (MIPS - TPLINK) and other device support but whoever wants please do enable it.
++//What happens is that for some reason pooling touches usbdev even though reads/writes are performed under lock like in usb-utils
++// same function actualy
++
++#if defined(USE_HEXMINERS)
++#else
+ static void *libusb_poll_thread(void __maybe_unused *arg)
+ {
+ 	struct timeval tv_end = {1, 0};
+@@ -9286,6 +9548,7 @@
+ 
+ 	return NULL;
+ }
++#endif
+ 
+ static void initialise_usb(void) {
+ 	int err = libusb_init(NULL);
+@@ -9297,14 +9560,20 @@
+ 	}
+ 	initialise_usblocks();
+ 	usb_polling = true;
++	#if defined(USE_HEXMINERS)
++	#else
++	
+ 	pthread_create(&usb_poll_thread, NULL, libusb_poll_thread, NULL);
++	#endif
+ }
+ #else
+ #define initialise_usb() {}
+ #endif
+ 
++
+ int main(int argc, char *argv[])
+ {
++	
+ 	struct sigaction handler;
+ 	struct work *work = NULL;
+ 	bool pool_msg = false;
+@@ -9410,6 +9679,8 @@
+ 		load_default_config();
+ 
+ 	if (opt_benchmark || opt_benchfile) {
++		//if (opt_scrypt)
++		quit(1, "Cannot use benchmark mode with scrypt");
+ 		struct pool *pool;
+ 
+ 		pool = add_pool();
+@@ -9467,9 +9738,9 @@
+ 
+ 	if (want_per_device_stats)
+ 		opt_log_output = true;
+-
++//opt_scrypt
+ 	if (opt_scantime < 0)
+-		opt_scantime = 60;
++		opt_scantime = 30;
+ 
+ 	total_control_threads = 8;
+ 	control_thr = calloc(total_control_threads, sizeof(*thr));
+@@ -9733,8 +10004,8 @@
+ 
+ 		/* If the primary pool is a getwork pool and cannot roll work,
+ 		 * try to stage one extra work per mining thread */
+-		if (!pool_localgen(cp) && !staged_rollable)
+-			max_staged += mining_threads;
++		//if (!pool_localgen(cp) && !staged_rollable)
++			//max_staged += mining_threads;
+ 
+ 		mutex_lock(stgd_lock);
+ 		ts = __total_staged();
+@@ -9745,7 +10016,7 @@
+ 		/* Wait until hash_pop tells us we need to create more work */
+ 		if (ts > max_staged) {
+ 			if (work_emptied && max_queue < opt_queue) {
+-				max_queue++;
++				if(max_queue < most_devices * 2) max_queue++;
+ 				work_emptied = false;
+ 			}
+ 			work_filled = true;
+@@ -9754,12 +10025,12 @@
+ 		}
+ 		mutex_unlock(stgd_lock);
+ 
+-		if (ts > max_staged) {
++		if (ts > max_staged ) {
+ 			/* Keeps slowly generating work even if it's not being
+ 			 * used to keep last_getwork incrementing and to see
+ 			 * if pools are still alive. */
+ 			if (work_emptied && max_queue < opt_queue) {
+-				max_queue++;
++				if(max_queue < most_devices * 2) max_queue++;
+ 				work_emptied = false;
+ 			}
+ 			work_filled = true;
+@@ -9853,7 +10124,7 @@
+ 
+ 		work->pool = pool;
+ 		ce = pop_curl_entry(pool);
+-		/* obtain new work from bitcoin via JSON-RPC */
++		/* obtain new work from litecoin via JSON-RPC */
+ 		if (!get_upstream_work(work, ce->curl)) {
+ 			applog(LOG_DEBUG, "Pool %d json_rpc_call failed on get work, retrying in 5s", pool->pool_no);
+ 			/* Make sure the pool just hasn't stopped serving

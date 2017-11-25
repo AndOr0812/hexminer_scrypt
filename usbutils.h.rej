@@ -1,0 +1,17 @@
+--- usbutils.h	2014-09-22 14:22:33.052838431 +0300
++++ usbutils.h	2014-09-22 14:25:50.191914120 +0300
+@@ -137,6 +137,7 @@
+ 	IDENT_AMU,
+ 	IDENT_ANT,
+ 	IDENT_ANU,
++	IDENT_HEXS,
+ 	IDENT_AS2,
+ 	IDENT_AVA,
+ 	IDENT_AV2,
+@@ -577,5 +578,5 @@
+ 
+ #define usb_transfer_read(cgpu, typ, req, val, idx, buf, bufsiz, read, cmd) \
+ 	_usb_transfer_read(cgpu, typ, req, val, idx, buf, bufsiz, read, DEVTIMEOUT, cmd)
+-
++	
+ #endif

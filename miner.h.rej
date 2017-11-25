@@ -1,0 +1,67 @@
+--- miner.h	2014-09-22 14:22:33.048838208 +0300
++++ miner.h	2014-09-22 14:25:50.191914120 +0300
+@@ -229,6 +229,7 @@
+ 	DRIVER_ADD_COMMAND(modminer)
+ 
+ #define ASIC_PARSE_COMMANDS(DRIVER_ADD_COMMAND) \
++	DRIVER_ADD_COMMAND(hexminers) \
+ 	DRIVER_ADD_COMMAND(ants1) \
+ 	DRIVER_ADD_COMMAND(ants2) \
+ 	DRIVER_ADD_COMMAND(avalon) \
+@@ -280,6 +281,13 @@
+ 	POOL_LOADBALANCE,
+ 	POOL_BALANCE,
+ };
++#if defined(USE_HEXMINERS)
++
++enum default_hex_miner {
++	D_HEXS,
++};
++extern enum default_hex_miner default_hex_miner;
++#endif
+ 
+ #define TOP_STRATEGY (POOL_BALANCE)
+ 
+@@ -597,6 +605,11 @@
+ 	dest[6] = src[1];
+ 	dest[7] = src[0];
+ }
++static inline void swap32yes(void*out, const void*in, size_t sz) {
++	size_t swapcounter = 0;
++	for (swapcounter = 0; swapcounter < sz; ++swapcounter)
++		(((uint32_t*)out)[swapcounter]) = swab32(((uint32_t*)in)[swapcounter]);
++}
+ 
+ static inline void swab256(void *dest_p, const void *src_p)
+ {
+@@ -1039,6 +1052,9 @@
+ extern int opt_minion_spiusec;
+ extern char *opt_minion_temp;
+ #endif
++#ifdef USE_HEXMINERS
++extern char *opt_hexminers_options;
++#endif
+ #ifdef USE_USBUTILS
+ extern char *opt_usb_select;
+ extern int opt_usbdump;
+@@ -1393,6 +1409,10 @@
+ 	struct timeval	tv_work_start;
+ 	struct timeval	tv_work_found;
+ 	char		getwork_mode;
++	
++#if defined(USE_HEXMINERS)
++	bool ping;
++#endif
+ };
+ 
+ #ifdef USE_MODMINER
+@@ -1440,6 +1460,9 @@
+ extern bool test_nonce(struct work *work, uint32_t nonce);
+ extern bool test_nonce_diff(struct work *work, uint32_t nonce, double diff);
+ extern bool submit_tested_work(struct thr_info *thr, struct work *work);
++#if defined(USE_HEXMINERS)
++extern bool submit_tested_work_fast_clone(struct thr_info *thr, struct work *work, bool diff1);
++#endif
+ extern bool submit_nonce(struct thr_info *thr, struct work *work, uint32_t nonce);
+ extern bool submit_noffset_nonce(struct thr_info *thr, struct work *work, uint32_t nonce,
+ 			  int noffset);

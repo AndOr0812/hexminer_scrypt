@@ -1,0 +1,83 @@
+--- configure.ac	2014-09-22 14:22:33.036837532 +0300
++++ configure.ac	2014-09-22 14:25:50.139911198 +0300
+@@ -148,6 +148,18 @@
+ fi
+ 
+ 
++scrypt="no"
++
++AC_ARG_ENABLE([scrypt],
++	[AC_HELP_STRING([--enable-scrypt],[Compile support for scrypt litecoin mining (default disabled)])],
++	[scrypt=$enableval]
++	)
++if test "x$scrypt" = xyes; then
++	AC_DEFINE([USE_SCRYPT], [1], [Defined to 1 if scrypt support is wanted])
++fi
++
++AM_CONDITIONAL([HAS_SCRYPT], [test x$scrypt = xyes])
++
+ avalon="no"
+ 
+ AC_ARG_ENABLE([avalon],
+@@ -329,6 +341,17 @@
+ AM_CONDITIONAL([HAS_MINION], [test x$minion = xyes])
+ 
+ 
++hexminers="no"
++
++AC_ARG_ENABLE([hexminers],
++	[AC_HELP_STRING([--enable-hexminers],[Compile support for hexminers (default disabled)])],
++	[hexminers=$enableval]
++	)
++if test "x$hexminers" = xyes; then
++	AC_DEFINE([USE_HEXMINERS], [1], [Defined to 1 if hexminers support is wanted])
++fi
++AM_CONDITIONAL([HAS_HEXMINERS], [test x$hexminers = xyes])
++
+ modminer="no"
+ 
+ AC_ARG_ENABLE([modminer],
+@@ -390,7 +413,7 @@
+ 	])
+ fi
+ 
+-if test x$avalon$avalon2$bitforce$bitfury$modminer$bflsc$icarus$hashfast$hashratio$klondike$drillbit$cointerra$ants1$ants2 != xnononononononononononononono; then
++if test x$hexminers$avalon$avalon2$bitforce$bitfury$modminer$bflsc$icarus$hashfast$hashratio$klondike$drillbit$cointerra$ants1$ants2 != xnononononononononononononono; then
+ 	want_usbutils=true
+ else
+ 	want_usbutils=false
+@@ -575,7 +598,11 @@
+ 
+ echo "  curses.TUI...........: $cursesmsg"
+ 
+-
++if test "x$scrypt" != xno; then
++	echo "  scrypt...............: Enabled"
++else
++	echo "  scrypt...............: Disabled"
++fi
+ echo
+ if test "x$ants1" = xyes; then
+ 	echo "  Antminer.S1.Bitmain..: Enabled"
+@@ -613,6 +640,12 @@
+ 	echo "  BlackArrow.ASICs.....: Disabled"
+ fi
+ 
++if test "x$hexminers" = xyes; then
++	echo "  HEXSA2.ASICs.........: Enabled"
++else
++	echo "  HEXSA2.ASICs.........: Disabled"
++fi
++
+ if test "x$bflsc" = xyes; then
+ 	echo "  BFL.ASICs............: Enabled"
+ else
+@@ -699,7 +732,7 @@
+ 	echo "  ModMiner.FPGAs.......: Disabled"
+ fi
+ 
+-if test "x$avalon$avalon2$bab$bflsc$bitforce$bitfury$hashfast$hashratio$icarus$klondike$knc$modminer$drillbit$minion$cointerra$bitmine_A1$ants1$ants2$sp10$sp30" = xnononononononononononononononononononono; then
++if test "x$hexminers$avalon$avalon2$bab$bflsc$bitforce$bitfury$hashfast$hashratio$icarus$klondike$knc$modminer$drillbit$minion$cointerra$bitmine_A1$ants1$ants2$sp10$sp30" = xnononononononononononononononononononono; then
+ 	AC_MSG_ERROR([No mining configured in])
+ fi
+ 

@@ -1,0 +1,255 @@
+--- usbutils.c	2014-09-22 14:22:33.052838431 +0300
++++ usbutils.c	2014-09-22 14:25:50.191914120 +0300
+@@ -285,7 +285,15 @@
+ 	USB_EPS(0, kli0_epinfos)
+ };
+ #endif
+-
++#ifdef USE_HEXMINERS
++static struct usb_epinfo hexs_epinfos[] = {
++	{ LIBUSB_TRANSFER_TYPE_BULK,	64,	EPI(2), 0, 0 },
++	{ LIBUSB_TRANSFER_TYPE_BULK,	64,	EPO(2), 0, 0 }
++};
++static struct usb_intinfo hexs_ints[] = {
++	USB_EPS(1, hexs_epinfos)
++};
++#endif
+ #ifdef USE_ICARUS
+ static struct usb_epinfo ica_epinfos[] = {
+ 	{ LIBUSB_TRANSFER_TYPE_BULK,	64,	EPI(3), 0, 0 },
+@@ -535,6 +543,7 @@
+ 		.latency = LATENCY_UNUSED,
+ 		INTINFO(mmq_ints) },
+ #endif
++
+ #ifdef USE_AVALON
+ 	{
+ 		.drv = DRIVER_avalon,
+@@ -631,6 +640,20 @@
+ 		.latency = 10,
+ 		INTINFO(kli_ints) },
+ #endif
++#ifdef USE_HEXMINERS //04d8:000a 
++	{	 
++		.drv = DRIVER_hexminers,
++		.name = "HEXS",
++		.ident = IDENT_HEXS,
++		.idVendor = 0x04D8,
++		.idProduct = 0x000F,
++		.iProduct = NULL,
++		//.iProduct = "HEXSA1-CoinCraft ASIC Miner",
++		.config = 1,
++		.timeout = 100,
++		.latency = LATENCY_UNUSED,
++		 INTINFO(hexs_ints) },
++#endif
+ #ifdef USE_ICARUS
+ 	{
+ 		.drv = DRIVER_icarus,
+@@ -1057,7 +1080,6 @@
+ {
+ 	char tmp[512];
+ 	int err;
+-
+ 	err = libusb_set_configuration(handle, cd);
+ 	if (err) {
+ 		snprintf(tmp, sizeof(tmp), EOL "  ** dev %d: Failed to set config descriptor to %d, err %d",
+@@ -1142,6 +1164,7 @@
+ 	append(buf, tmp, off, len);
+ 
+ 	err = libusb_open(dev, &handle);
++	
+ 	if (err) {
+ 		snprintf(tmp, sizeof(tmp), EOL "  ** dev %d: Failed to open, err %d", (int)(*count), err);
+ 		append(buf, tmp, off, len);
+@@ -1924,7 +1947,6 @@
+ 
+ 	if (unlikely(!cgpu))
+ 		quit(1, "Failed to calloc cgpu for %s in usb_alloc_cgpu", drv->dname);
+-
+ 	cgpu->drv = drv;
+ 	cgpu->deven = DEV_ENABLED;
+ 	cgpu->threads = threads;
+@@ -1958,13 +1980,13 @@
+ 	struct libusb_config_descriptor *config = NULL;
+ 	const struct libusb_interface_descriptor *idesc;
+ 	const struct libusb_endpoint_descriptor *epdesc;
+-	unsigned char strbuf[STRBUFLEN+1];
++	//unsigned char strbuf[STRBUFLEN+1];
+ 	char devpath[32];
+ 	char devstr[STRBUFLEN+1];
+ 	int err, ifinfo, epinfo, alt, epnum, pstate;
+ 	int bad = USB_INIT_FAIL;
+ 	int cfg, claimed = 0;
+-
++  
+ 	DEVWLOCK(cgpu, pstate);
+ 
+ 	cgpu->usbinfo.bus_number = libusb_get_bus_number(dev);
+@@ -1999,13 +2021,7 @@
+ 	if (unlikely(!cgusb->descriptor))
+ 		quit(1, "USB failed to calloc _usb_init cgusb descriptor");
+ 
+-	err = libusb_get_device_descriptor(dev, cgusb->descriptor);
+-	if (err) {
+-		applog(LOG_DEBUG,
+-			"USB init failed to get descriptor, err %d %s",
+-			err, devstr);
+-		goto dame;
+-	}
++
+ 
+ 	cg_wlock(&cgusb_fd_lock);
+ 	err = libusb_open(dev, &(cgusb->handle));
+@@ -2035,6 +2051,14 @@
+ 		}
+ 		goto dame;
+ 	}
++	
++	err = libusb_get_device_descriptor(dev, cgusb->descriptor);
++	if (err) {
++		applog(LOG_ERR,
++			"USB init failed to get descriptor, err %d %s",
++			err, devstr);
++		goto nokernel;
++	}
+ 
+ #ifdef LINUX
+ 	for (ifinfo = 0; ifinfo < found->intinfo_count; ifinfo++) {
+@@ -2057,7 +2081,8 @@
+ 	}
+ #endif
+ 
+-	if (found->iManufacturer) {
++	if (found->iManufacturer)
++	 {
+ 		unsigned char man[STRBUFLEN+1];
+ 
+ 		err = libusb_get_string_descriptor_ascii(cgusb->handle,
+@@ -2079,17 +2104,30 @@
+ 	}
+ 
+ 	if (found->iProduct) {
+-		unsigned char prod[STRBUFLEN+1];
+-
+-		err = libusb_get_string_descriptor_ascii(cgusb->handle,
++		unsigned char prod[STRBUFLEN+1] = {0};
++   err = -9;
++		if(cgusb->descriptor->iProduct) 
++				err = libusb_get_string_descriptor_ascii(cgusb->handle,
+ 							 cgusb->descriptor->iProduct,
+-							 prod, STRBUFLEN);
++							 (unsigned char *)prod, 127);
+ 		if (err < 0) {
++		
++		#if defined(USE_HEXMINERS)
++      #if defined(USE_HEXMINERS)
++			if(found->ident == IDENT_HEXS && default_hex_miner == D_HEXS) {
++				snprintf((char *)prod, sizeof(prod), "HEXSA1-CoinCraft ASIC Miner");
++			} 
++			#endif
++		#else
++			
+ 			applog(LOG_DEBUG,
+ 				"USB init, failed to get iProduct, err %d %s",
+ 				err, devstr);
+ 			goto cldame;
++		#endif
++			
+ 		}
++	
+ 		if (strcmp((char *)prod, found->iProduct)) {
+ 			applog(LOG_DEBUG, "USB init, iProduct mismatch %s",
+ 			       devstr);
+@@ -2097,6 +2135,9 @@
+ 			bad = USB_INIT_IGNORE;
+ 			goto cldame;
+ 		}
++		cgusb->prod_string = strdup((char *)prod);
++	} else {
++		cgusb->prod_string = (char *)BLANK;
+ 	}
+ 
+ 	cfg = -1;
+@@ -2184,12 +2225,12 @@
+ 		else {
+ 			switch(err) {
+ 				case LIBUSB_ERROR_BUSY:
+-					applog(LOG_WARNING,
++					applog(LOG_ERR,
+ 						"USB init, claim ifinfo %d interface %d in use %s",
+ 						ifinfo, THISIF(found, ifinfo), devstr);
+ 					break;
+ 				default:
+-					applog(LOG_DEBUG,
++					applog(LOG_ERR,
+ 						"USB init, claim ifinfo %d interface %d failed,"
+ 						" err %d %s",
+ 						ifinfo, THISIF(found, ifinfo), err, devstr);
+@@ -2203,7 +2244,7 @@
+ 	if (err)
+ 		cfg = -1;
+ 	if (cfg != found->config) {
+-		applog(LOG_WARNING,
++		applog(LOG_ERR,
+ 			"USB init, incorrect config (%d!=%d) after claim of %s",
+ 			cfg, found->config, devstr);
+ 		goto reldame;
+@@ -2218,25 +2259,8 @@
+ // TODO: allow this with the right version of the libusb include and running library
+ //	cgusb->speed = libusb_get_device_speed(dev);
+ 
+-	err = libusb_get_string_descriptor_ascii(cgusb->handle,
+-				cgusb->descriptor->iProduct, strbuf, STRBUFLEN);
+-	if (err > 0)
+-		cgusb->prod_string = strdup((char *)strbuf);
+-	else
+-		cgusb->prod_string = (char *)BLANK;
+-
+-	err = libusb_get_string_descriptor_ascii(cgusb->handle,
+-				cgusb->descriptor->iManufacturer, strbuf, STRBUFLEN);
+-	if (err > 0)
+-		cgusb->manuf_string = strdup((char *)strbuf);
+-	else
+ 		cgusb->manuf_string = (char *)BLANK;
+ 
+-	err = libusb_get_string_descriptor_ascii(cgusb->handle,
+-				cgusb->descriptor->iSerialNumber, strbuf, STRBUFLEN);
+-	if (err > 0)
+-		cgusb->serial_string = strdup((char *)strbuf);
+-	else
+ 		cgusb->serial_string = (char *)BLANK;
+ 
+ // TODO: ?
+@@ -2281,11 +2305,13 @@
+ 	cgusb->handle = NULL;
+ 	cg_wunlock(&cgusb_fd_lock);
+ 
+-dame:
+ 
+ 	if (config)
+ 		libusb_free_config_descriptor(config);
+ 
++dame:
++
++
+ 	cgusb = free_cgusb(cgusb);
+ 
+ out_unlock:
+@@ -2453,7 +2479,7 @@
+ 				drv->dname, drv_count[drv->drv_id].limit);
+ 			break;
+ 		}
+-
++    
+ 		found = usb_check(drv, list[i]);
+ 		if (found != NULL) {
+ 			bool new_dev = false;
+@@ -3581,6 +3607,7 @@
+ 	for (i = 0; i < total_devices; i++) {
+ 		cgpu = devices[i];
+ 		switch (cgpu->drv->drv_id) {
++			case DRIVER_hexminers:
+ 			case DRIVER_bflsc:
+ 			case DRIVER_bitforce:
+ 			case DRIVER_bitfury:
