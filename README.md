@@ -1,4 +1,4 @@
-CGgminer v4.6.1 - HexMiner
+CGgminer v4.6.1 - HexMiner-Scrypt
 ==============
 
 CGMiner v4.6.1 with Hexminer ASIC-SCRYPT support.
