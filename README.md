@@ -5,7 +5,7 @@ CGMiner v4.6.1 with Hexminer ASIC support.
 
 This file describes cgminer specific settings and options.
 
-For general CGMiner information refer to doc/README inside each version (scrypt or sha256).
+For general CGMiner information refer to doc/README .
 
 ## Hexminer : ##
 
@@ -23,49 +23,9 @@ How to build Scrypt version:
 	libjansson-dev libncurses5-dev libudev-dev libjansson-dev
 	cd hexminer_scrypt
 	./autogen.sh
-	./configure --enable-scrypt --enable-hexminer
+	./configure --enable-scrypt --enable-hexminers
 	make
-	make install
-
-
-How to build SHA256 version with all hexminer:
-
-	sudo apt-get update
-	sudo apt-get install build-essential autoconf automake libtool pkg-config libcurl4-openssl-dev libudev-dev \
-	libjansson-dev libncurses5-dev libudev-dev libjansson-dev
-	cd hexminer_sha256
-	./autogen.sh
-	./configure --enable-hexminera --enable-hexminerb --enable-hexmineru --enable-hexminerc --enable-hexminer8 \
-	--enable-hexminerm --enable-hexminerr --enable-hexminerbe200 --enable-hexminer3
-	make
-	make install
-
-How to build SHA256 version with specific hexminer:
-
-	sudo apt-get update
-	sudo apt-get install build-essential autoconf automake libtool pkg-config libcurl4-openssl-dev libudev-dev \
-	libjansson-dev libncurses5-dev libudev-dev libjansson-dev
-	cd hexminer_sha256
-	./autogen.sh
-	./configure --help
-	
-
-	wait configure finish and you can read this :
-	
-	--enable-hexminera      Compile support for hexminera (default disabled)
-	--enable-hexminerb      Compile support for hexminerb (default disabled)
-	--enable-hexmineru      Compile support for hexmineru (default disabled)
-	--enable-hexminerc      Compile support for hexminerc (default disabled)
-	--enable-hexminer8      Compile support for hexminer8 (default disabled)
-	--enable-hexminerm      Compile support for hexminerm (default disabled)
-	--enable-hexminerr      Compile support for hexminerr (default disabled)
-	--enable-hexminerbe200  Compile support for hexminerbe200 (default disabled)
-	--enable-hexminer3      Compile support for hexminer3 (default disabled)
-
-	choose your miner in this list , then for example :
-
-	./configure --enable-hexminer8
-	make
+	sudo make install
 
 
 ### Option Summary : 
